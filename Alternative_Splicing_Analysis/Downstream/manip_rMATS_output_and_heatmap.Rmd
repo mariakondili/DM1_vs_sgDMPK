@@ -1,0 +1,400 @@
+---
+title: From rMATS output to heatmap of diff.splicing events of CTRL-vs-DM1.NT -vs- DM1-sgDMPK2
+author: "Maria Kondili"
+date: "03/02/2022"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(glue))
+
+```
+
+Objective: Use rMATS output & Merge all events-types & Create heatmap of diff splicing events
+
+```{r input_and_output_dir}
+
+work_dir <- "/dm1_vs_sgDMPK/Alternative_Splicing/"
+res_dir <- paste0(work_dir,"Post_step/Stats_step/")
+
+resdir_1 <- paste0(res_dir,"CT_vs_DMsgNT2/")
+resdir_2 <- paste0(res_dir,"DMsgNT2_vs_DMsgDMPK2/")
+resdir_3 <- paste0(res_dir,"CT_vs_DMsgDMPK2/")
+
+# Create output folder to save merged table
+final_outdir1 <- paste0(res_dir,"final_CT_vs_DMsgNT/")
+dir.create(final_outdir1, showWarnings = F)
+
+final_outdir2 <- paste0(res_dir,"final_DMsgNT_vs_DMsgDMPK/")
+dir.create(final_outdir2, showWarnings = F)
+
+final_outdir3 <- paste0(res_dir,"final_CT_vs_DMsgDMPK/")
+dir.create(final_outdir3, showWarnings = F)
+
+```
+
+Modify rMATS tables with custom exon-coordinates (upstream/spliced/downstream positions)
+
+```{r add_exon_info, message=FALSE, warning=FALSE}
+
+source("add_exonLength_and_Coord.R")
+
+splice_events <- c("A3SS", "A5SS","MXE", "RI", "SE")
+## output in same folder but with suffix "_exonCoord"
+
+
+for (s in splice_events) {
+  cat(" Launching event :", s,"\n")
+
+  add_exonLen_and_coord(splice_event=s, tab_suffix=".MATS.JCEC.txt",
+                        in_dir  = resdir_1,
+                        out_dir = final_outdir1); #>> CTRL -vs-DM1.nt
+
+  add_exonLen_and_coord(splice_event=s, tab_suffix=".MATS.JCEC.txt",
+                        in_dir  = resdir_2,
+                        out_dir = final_outdir2) #>> DM1.NT vs DM1.sgDMPK
+
+  add_exonLen_and_coord(splice_event=s, tab_suffix=".MATS.JCEC.txt",
+                        in_dir  = resdir_3,
+                        out_dir = final_outdir3)  #>> CTRL-vs-DMsgDMPK
+
+}
+
+
+cat("New tables with modified columns are created:\n")
+print(list.files(final_outdir1) )
+print(list.files(final_outdir2) )
+print(list.files(final_outdir3) )
+
+```
+
+Merge Events in one table,with a given order of columns
+
+```{r merge_events }
+
+source(paste0(functions_dir,"/merge_spliceTypes_and_save.R"))
+
+new_suffix = ".JCEC_PerRepl_exonCoord.txt"
+
+```
+
+MERGE  CTsgNT_vs_DMsgNT
+
+```{r merge_events_1 }
+
+ase_mrg_NT <- merge_spliceTypes_and_save(splice_events,
+                                         new_suffix,
+                                         indir=final_outdir1)
+
+ase_mrg_NT <- rename(ase_mrg_NT,"dPSI"="IncLevelDifference")
+colnames(ase_mrg_NT) <- gsub("IncLevel1_*", "IncLevel_CT_",colnames(ase_mrg_NT))
+colnames(ase_mrg_NT) <- gsub("IncLevel2_*", "IncLevel_DMsgNT_",colnames(ase_mrg_NT))
+
+ase_mrg_NT$RowID <- rownames(ase_mrg_NT)
+rownames(ase_mrg_NT) <- NULL
+
+ase_mrg_NT %>%  glimpse
+```
+
+MERGE DMsgNT_vs_DMsgDMPK
+
+```{r merge_events_2 }
+
+ase_mrg_sg2 <- merge_spliceTypes_and_save(splice_events,
+                                          new_suffix,
+                                          indir=final_outdir2)
+
+ase_mrg_sg2 <- rename(ase_mrg_sg2,"dPSI"="IncLevelDifference")
+
+colnames(ase_mrg_sg2) <- gsub("IncLevel1_*", "IncLevel_DMsgNT_",colnames(ase_mrg_sg2))
+colnames(ase_mrg_sg2) <- gsub("IncLevel2_*", "IncLevel_DMsgDMPK_",colnames(ase_mrg_sg2))
+
+ase_mrg_sg2$RowID <- rownames(ase_mrg_sg2)
+rownames(ase_mrg_sg2) <- NULL
+
+ase_mrg_sg2 %>%  glimpse
+
+```
+
+MERGE CTsgNT-vs-DMsgDMPK
+
+```{r merge_events_3 }
+
+ase_mrg_ct_vs_sg2 <- merge_spliceTypes_and_save(splice_events,
+                                                new_suffix,
+                                                indir=final_outdir3)
+
+ase_mrg_ct_vs_sg2 <- rename(ase_mrg_ct_vs_sg2,"dPSI"="IncLevelDifference")
+colnames(ase_mrg_ct_vs_sg2) <- gsub("IncLevel1_*", "IncLevel_CT_",colnames(ase_mrg_ct_vs_sg2))
+colnames(ase_mrg_ct_vs_sg2) <- gsub("IncLevel2_*", "IncLevel_DMsgDMPK_",colnames(ase_mrg_ct_vs_sg2))
+
+ase_mrg_ct_vs_sg2$RowID <- rownames(ase_mrg_ct_vs_sg2)
+rownames(ase_mrg_ct_vs_sg2) <- NULL
+
+ase_mrg_ct_vs_sg2 %>%  glimpse
+
+```
+
+
+```{r write_table }
+
+final_outdir_all ="../Post_step/Stats_step/Final_Results/"
+dir.create(final_outdir_all)
+
+mrg_filename_NT="merged_modif_ASE_CTRL_vs_DMsgNT_FDRsorted.tsv"
+
+write.table( ase_mrg_NT[order(ase_mrg_NT$FDR,decreasing = F),],
+             paste0(final_outdir_all, mrg_filename_NT),
+             sep="\t",col.names = T,row.names = F,quote=F )
+
+mrg_filename_sg2 = "merged_modif_ASE_DMsgNT_vs_DMsgDMPK_FDRsorted.tsv"
+
+write.table( ase_mrg_sg2[order(ase_mrg_sg2$FDR,decreasing = F),],
+             paste0(final_outdir_all, mrg_filename_sg2),
+             sep="\t",col.names = T,row.names = F,quote=F )
+
+mrg_filename_ct_vs_sg2="merged_modif_ASE_CTRL_vs_DMsgDMPK_FDRsorted.tsv"
+write.table( ase_mrg_ct_vs_sg2[order(ase_mrg_ct_vs_sg2$FDR,decreasing = F),],
+             paste0(final_outdir_all, mrg_filename_ct_vs_sg2),
+             sep="\t",col.names = T,row.names = F,quote=F )
+
+cat("Merged Splicing Events for each comparison are in files :\n",
+    mrg_filename_NT,", \n" ,
+    mrg_filename_sg2 ,"and \n",
+    mrg_filename_ct_vs_sg2,"\n")
+
+
+```
+
+PLOT Heatmap with significantly spliced events
+
+```{r plot_heatmap_function}
+
+plot_heatmap_signif_splice <- function(ase, fdr.co, psi.co, pair,
+                                       inc_level_cols=c(8:15), plot_name) {
+
+    ase.filt <- subset(ase, (FDR < fdr.co &  abs(dPSI) > psi.co) )
+
+
+    ###  z.gene =  (E(g) - Mean(g.replicates) ) / M.A.D (g.replicates), mad=median.absolute.deviation
+    x <- ase.filt[,inc_level_cols]
+    s1 = strsplit(pair, "_vs_")[[1]][1]
+    s2 = strsplit(pair, "_vs_")[[1]][2]
+
+    repsC1 <- c("r1","r2","r3","r4")
+    repsC2 <- c("r1","r2","r3","r4")
+
+    colnames(x) <- c( paste(s1,"_", repsC1,sep=""),
+                      paste(s2,"_", repsC2,sep=""))
+
+
+    cal_z_score <- function(x){
+      (x - mean(x)) / sd(x)
+    }
+    x_norm <- t(apply(x, 1, cal_z_score))
+    # x_norm <- x_norm[-which(apply(x_norm, 2, is.na)) ,]
+
+    #Rowv=as.dendrogram(hcl_row),tree=ct))
+    library(gplots)
+    library(RColorBrewer)
+
+   #png(plot_name)
+    heatmap.2(x_norm,
+              Rowv=TRUE,
+              Colv=F,
+              dendrogram ='row',
+              scale="row", na.rm=TRUE,
+              trace='none',
+              labCol=colnames(x),
+              col=rev(colorRampPalette(brewer.pal(10, "RdBu"))(256)),
+              margins=c(9,2),
+              cexCol=1.3,
+              srtCol=45,
+              labRow="",
+              offsetCol=0,
+              key=TRUE,
+              keysize = 1.5,
+              density.info="density",
+              key.title="Color range",
+              key.xlab="norm.counts",
+              key.ylab="Counts",
+              key.par=list(mar=c(3,4,3,1)),
+              notecex=3,
+              main=paste(nrow(x_norm),"signif. Diff/ial splicing events\nin ",pair))
+    #print(hmp)
+    #dev.off()
+    return(ase.filt)
+
+}
+
+```
+
+HEATMAP OF CTRL_vs_DMsgNT
+
+```{r call function plot_1}
+
+plot_dir <- paste0(getwd(),"/Plots/")
+dir.create(plot_dir,showWarnings = F)
+
+plot_name="Plots/Heatmap_SignifAltSplicing_CTRL_vs_DMsgNT.png"
+png(plot_name,width=600,height=650)
+ase_mrg_NT.filt <- plot_heatmap_signif_splice(ase_mrg_NT,
+                                              fdr.co=0.05,
+                                              psi.co=0.10,
+                                              pair="CTRL_vs_DMsgNT",
+                                              inc_level_cols=c(8:15),
+                                              plot_name)
+
+dev.off()
+
+```
+
+HEATMAP OF DMsgNT_vs_DMsgDMPK
+
+```{r call function plot_2}
+
+plot_name="Plots/Heatmap_SignifAltSplicing_DMsgNT_vs_DMsgDMPK.png"
+png(plot_name,width=600,height=650)
+ase_mrg_sg2.filt <- plot_heatmap_signif_splice(ase_mrg_sg2,
+                                              fdr.co=0.05,
+                                              psi.co=0.10,
+                                              pair="DMsgNT_vs_DMsgDMPK",
+                                              inc_level_cols=c(8:15),
+                                              plot_name)
+dev.off()
+```
+
+HEATMAP OF CTRL_vs_DMsgDMPK
+
+```{r call function plot_3}
+
+plot_name = "Plots/Heatmap_SignifAltSplicing_CTRL_vs_DMsgDMPK.png"
+png(plot_name)
+ase_mrg_ct_vs_sg2.filt <- plot_heatmap_signif_splice(ase_mrg_ct_vs_sg2,
+                                                     fdr.co=0.05,
+                                                     psi.co=0.10,
+                                                     pair="CTRL_vs_DMsgDMPK",
+                                                     inc_level_cols=c(8:15),
+                                                      plot_name)
+
+dev.off()
+
+```
+
+
+```{r message_of_lengths}
+
+cat("Number of Genes spliced: \n ")
+ase_mrg_NT.filt$geneSymbol %>% unique() %>%  length
+ase_mrg_sg2.filt$geneSymbol %>% unique() %>%  length
+ase_mrg_ct_vs_sg2.filt$geneSymbol %>% unique() %>%  length
+
+
+```
+
+
+```{r create_piechart_function,echo=T,include=F,eval=F}
+
+create_pieChart_Splicing <- function(ase, pair, signif.co,psi.co) {
+
+  library(ggplot2)
+
+  ## Count events Signif. splicing :
+
+  signif <- nrow(subset(ase, (FDR < signif.co  &  abs(dPSI) >= psi.co )))
+  all_splice <-  nrow(ase)
+
+  splice_counts <- data.frame(category=c("All", "Signif & highPSI"),
+                              count=c(all_splice,signif))
+
+  ## calculate percentage of each count :
+  splice_counts$fraction = round(splice_counts$count / sum(splice_counts$count),2) * 100
+
+  # Compute the cumulative percentages (top of each rectangle)
+  splice_counts$ymax = cumsum(splice_counts$fraction)
+
+  # Compute the bottom of each rectangle
+  splice_counts$ymin = c(0, head(splice_counts$ymax, n=-1))
+
+  # Compute label position
+  # pos <- (splice_counts$ymax + splice_counts$ymin) / 2 # = 49.0 98.5 99.5
+
+  splice_counts$labelPosition <- c(50.0, 97.0)
+
+  # Compute a good label
+  splice_counts$label <- paste0(splice_counts$category,"\n", splice_counts$fraction, " %")
+
+  # Make the plot
+  dir.create("Plots/",showWarnings = F)
+    ggplot(splice_counts, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=category)) +
+      geom_rect() +
+      geom_label( x=3.5, aes(y=labelPosition, label=label), size=3) +
+      coord_polar(theta="y") +
+      xlim(c(2, 4)) +
+      theme_void()
+
+}
+
+## call it with ASE table :
+create_pieChart_Splicing(ase_mrg_sg2, pair="DMsgNT_vs_DMsgDMPK",signif.co=0.05, psi.co=0.10)
+
+create_pieChart_Splicing(ase_mrg_ct_vs_sg2, pair="CT_vs_DMsgDMPK",signif.co=0.05, psi.co=0.10)
+```
+
+
+Refilter only with FDR, for GO-terms :
+
+```{r}
+
+ase_mrg_ct_vs_sg2.filt <- subset(ase_mrg_ct_vs_sg2, FDR < 0.05 )
+ase_mrg_NT.filt  <- subset(ase_mrg_NT, FDR < 0.05 )
+ase_mrg_sg2.filt <- subset(ase_mrg_sg2 ,FDR < 0.05 )
+
+```
+
+
+```{r go_terms_dPSI_genes_DM1_vs_CTRL}
+
+source("/dm1_vs_sgDMPK/Diff_Expression_Analysis/create_barplot_GOterms_hs.R")
+
+#png("Plots/Barplot_GO_MolFunctions_DM1nt_vs_CTRL_fdr0.05.png")
+create_barplot_GOterms.hs(ase_mrg_NT.filt$geneSymbol,
+                          gene_format = "SYMBOL",
+                          my_ontol="MF",
+                          main="DM1nt_vs_CTRL")
+#dev.off()
+```
+
+
+```{r go_terms_dPSI_genes_DM1_vs_sgDPMK }
+
+#png("Plots/Barplot_GO_MolFunctions_DM1nt_vs_DMsgDPMK_fdr0.05.png")
+create_barplot_GOterms.hs(ase_mrg_sg2.filt$geneSymbol,
+                          gene_format = "SYMBOL",
+                          my_ontol="MF",
+                          main="DM1nt_vs_DMsgDPMK" )
+
+#dev.off()
+
+```
+
+
+```{r go_terms_dPSI_genes_CTRL_vs_sgDMPK}
+
+#png("Plots/Barplot_GO_MolFunctions_CTRL_vs_DMsgDMPK_fdr0.05.png")
+create_barplot_GOterms.hs(ase_mrg_ct_vs_sg2.filt$geneSymbol,
+                          gene_format = "SYMBOL",
+                          my_ontol="MF",
+                          main="CTRL_vs_DMsgDMPK")
+
+#dev.off()
+
+```

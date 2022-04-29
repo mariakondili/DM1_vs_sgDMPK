@@ -1,0 +1,245 @@
+---
+title: "Merge again all pairs by common exon-coord, and calculate Correction"
+author: "Maria Kondili"
+date: "16/02/2022"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r}
+
+load(".RData")
+####> Use final tables of splice-events created by : "manip_rMATS_output_and_heatmap.Rmd"
+ 
+suppressPackageStartupMessages(library(tidyverse))
+
+work_dir <- "/shared/projects/dm1_vs_sg2_treatmnt/rMATS_Splicing/"
+res_dir <- paste0(work_dir,"Post_step/Stats_step/Final_Results/") 
+# "merged.." tables copied here, from "final"folder of each pair
+
+```
+
+#### MERGE Results of all pairs, by common spliced-exon-coordinates :
+
+```{r}
+all_ase <- dplyr::inner_join(ase_mrg_NT, 
+                             ase_mrg_sg2,
+                             by="alternative_exon_coordinates",
+                             suffix=c(".x",".y"))
+
+all_ase <- all_ase %>%  dplyr::rename("dPSI_CTvsDM1NT"     = "dPSI.x",
+                                     "dPSI_DM1_sgDMPK"     = "dPSI.y",
+                                     "PValue_CTvsDM1NT"    = "PValue.x",
+                                     "PValue_DM1_sgDMPK"   = "PValue.y",
+                                     "FDR_CTvsDM1NT"       = "FDR.x",
+                                     "FDR_DM1_sgDMPK"      = "FDR.y" )
+
+
+#na_lines <- which(is.na(all_ase[,grep("IncLevel_", colnames(all_ase))]))
+#all_ase  <- all_ase[-na_lines,]
+
+## Move on to 3rd table :
+all_ase <- dplyr::inner_join(all_ase, ase_mrg_ct_vs_sg2, 
+                             by="alternative_exon_coordinates", 
+                             suffix = c(".z",".w"))
+```
+
+ Now there are columns with ".x", "y"-> 1st merging, 
+ ".z"=DM1_vs_sgDMPK, 
+ "without_suffix"=CT_vs_sg2 & 
+ ".w"=CT_vs_sg2
+ 
+Find common Inc.Level values : 
+
+```{r}
+
+all_ase[1:5,c("IncLevel_CT_r1.z", "IncLevel_CT_r2.z","IncLevel_CT_r3.z", "IncLevel_CT_r1.w","IncLevel_CT_r2.w","IncLevel_CT_r3.w")]
+```
+
+Only last pair's stats values are not suffixed: DM1NTvsDMsgDMPK 
+(they don't have letter suffix,since they are unique now)
+For clarity we are renaming them : 
+
+```{r}
+
+all_ase <- all_ase %>% dplyr::rename("dPSI_CTvsDMsgDMPK"  = "dPSI", 
+                                      "FDR_CTvsDMsgDMPK"   = "FDR",
+                                      "PValue_CTvsDMsgDMPK"= "PValue" ) 
+
+
+##> Now we should remove redundant "IncLevel" columns and all other duplicated variables: 
+
+inclev1_str <- paste0("IncLevel_CT_",paste(rep("r",3),seq(1:4),sep=""),".w") # .z stays 
+inclev2_str <- paste0("IncLevel_DMsgNT_" ,paste(rep("r",4),seq(1:4),sep=""),".x") #> .y stays 
+inclev3_str <- paste0("IncLevel_DMsgDMPK_", paste(rep("r",4),seq(1:4),sep=""),".z") #> .w stays
+
+
+all_ase <- all_ase %>% dplyr::select(- all_of(c(inclev1_str,inclev2_str ,inclev3_str)))
+all_ase <- all_ase %>% dplyr::select(-c("GeneID.y","GeneID", 
+                                        "geneSymbol.y","geneSymbol" ,
+                                         "chr","chr.y",
+                                         "strand","strand.y",
+                                         "ExonLength.y","ExonLength",
+                                         "IncFormLen.y","SkipFormLen.y",
+                                         "IncFormLen"  ,"SkipFormLen",
+                                         "splice_event","splice_event.y"))
+
+
+all_ase$Mean_Psi_CTRL  <- all_ase %>% dplyr::select(grep("IncLevel_CT*",colnames(.))) %>% rowMeans()
+all_ase$Mean_Psi_DM1   <- all_ase %>% dplyr::select(grep("IncLevel_DMsgNT*",colnames(.))) %>% rowMeans()
+all_ase$Mean_Psi_sgDMPK <- all_ase %>% dplyr::select(grep("IncLevel_DMsgDMPK*",colnames(.))) %>% rowMeans()
+
+##> nrow(all_ase) = 204 Events are in common to all comparisons 
+
+```
+
+#### CORRECTION 
+
+```{r}
+
+#Correction = (( Mean_Psi_sgDMPK - Mean_Psi_DM1 ) / (Mean_Psi_CTRL- Mean_Psi_DM1)) * 100 )
+
+# all_ase <- mutate(all_ase, 
+#             "Correction_Pct" = round(((Mean_Psi_sgDMPK-Mean_Psi_DM1) / (Mean_Psi_CTRL- Mean_Psi_DM1))*100,2))
+
+all_ase <- mutate(all_ase, 
+            "Correction_Ratio" = round( abs(Mean_Psi_sgDMPK-Mean_Psi_DM1) / 
+                                         abs(Mean_Psi_CTRL- Mean_Psi_DM1) ,2))
+
+
+### Put columns in order: 
+cols_ord <- c("GeneID.x" ,"geneSymbol.x","chr.x", "strand.x" ,
+              "IncFormLen.x", "SkipFormLen.x", "ExonLength.x",
+              "alternative_exon_coordinates", 
+              "RowID.x","dPSI_CTvsDM1NT","PValue_CTvsDM1NT","FDR_CTvsDM1NT",
+              "RowID.y","dPSI_DM1_sgDMPK", "PValue_DM1_sgDMPK", "FDR_DM1_sgDMPK",
+              "RowID", "dPSI_CTvsDMsgDMPK", "PValue_CTvsDMsgDMPK", "FDR_CTvsDMsgDMPK",
+              grep("IncLevel_CT_",colnames(all_ase),value = T),
+              grep("IncLevel_DMsgNT_" ,colnames(all_ase),value = T),
+              grep("IncLevel_DMsgDMPK_",colnames(all_ase),value = T),
+              grep("Mean_Psi_",colnames(all_ase),value = T),
+              "Correction_Ratio" )
+
+
+##> Save in File : 
+readr::write_delim(all_ase[,cols_ord], 
+                   paste0(res_dir,"Merged_common_ASevents_with_CorrectionRatio_CTnt_DM1nt_DM1sgDMPK.tsv"),
+                   delim="\t",col_names=T)
+
+dpsi_df <- data.frame("GeneName"     = all_ase$geneSymbol.x,
+                      "dPSI_CTvsDM"  = all_ase$dPSI_CTvsDM1NT,
+                      "dPSI_DMvsSG2" = all_ase$dPSI_DM1_sgDMPK,
+                      "dPSI_CTvsSG2" = all_ase$dPSI_CTvsDMsgDMPK )
+dpsi_df %>% head 
+
+```
+
+####  BOXPLOT per dPSI
+
+```{r}
+
+dpsi_df.mlt <- reshape2::melt(dpsi_df,id.vars="GeneName",value.name = "dPSI") 
+#dpsi_df.mlt <- dplyr::rename(dpsi_df.mlt,pair = variable)
+
+dpsi_df.mlt %>% head 
+
+png("Plots/BoxPlot_dPSI_per_Comparison.png")
+ggplot(dpsi_df.mlt, aes(x=pair, y=dPSI, fill=pair)) + 
+       geom_boxplot() + 
+      ggtitle("dPSI per Comparison")
+dev.off()
+
+
+```
+
+#### PCA of incl.level per Condition 
+
+```{r}
+
+all_inc_levels <- cbind(all_ase[,grep("IncLevel_CT_*", colnames(all_ase))],
+                        all_ase[,grep("IncLevel_DMsgNT_*", colnames(all_ase))],
+                        all_ase[,grep("IncLevel_DMsgDMPK_*", colnames(all_ase))])
+
+all_inc_levels <- all_inc_levels %>% drop_na()
+
+colnames(all_inc_levels ) <- gsub("\\..*","",colnames(all_inc_levels ))
+
+pca_res <- prcomp(t(all_inc_levels), scale=F) 
+#do PCA on genes ,not columns/samples
+summary(pca_res)
+names(pca_res)
+
+var_explained <- pca_res$sdev^2/sum(pca_res$sdev^2)
+
+png("Plots/PCA_Incl_levels_3conditions.png")
+pca_res$x %>%
+  as.data.frame %>%
+  rownames_to_column("Samples") %>% 
+  # create a new column  "Conditions", from samples, without the suffix "r[1-4]
+  separate(col=Samples,into = c("Conditions"), sep ="_r[1-4]") %>% 
+  ggplot(aes(x=PC1,y=PC2)) + 
+  geom_point(aes(color=Conditions),size=3) +
+  theme_bw(base_size=10) +
+  labs(x=paste0("PC1: ",round(var_explained[1]*100,1),"%"),
+       y=paste0("PC2: ",round(var_explained[2]*100,1),"%")) +
+  ggtitle("PCA")
+  # + theme(legend.position="top")
+dev.off()
+
+
+```
+
+#### Heatmap of highest-dPSI Incl.Levels of all samples
+
+```{r}
+
+##> Choose highest-dPSI : 
+sig_pos <- which(abs(all_ase$dPSI_CTvsDM1NT) > 0.1 & all_ase$FDR_CTvsDM1NT <0.05 )
+
+cal_z_score <- function(x){
+      (x - mean(x)) / sd(x)
+}
+    
+incl_z <- t(apply(all_inc_levels[sig_pos,], 1, cal_z_score))
+
+incl_z <- drop_na(as.data.frame(incl_z))
+# incl_z <- incl_z [-which(apply(incl_z, 2, is.na)) ,]
+    
+#Rowv=as.dendrogram(hcl_row),tree=ct))
+
+library(gplots)
+library(RColorBrewer)
+ 
+samples <- gsub("IncLevel_", "" , colnames(as.matrix(incl_z)))
+#png(plot_name) 
+
+heatmap.2(as.matrix(incl_z), 
+          Rowv=TRUE,
+          Colv=F,
+          dendrogram ='row',
+          scale="row", na.rm=TRUE,
+          trace='none',
+          labCol= samples,
+          col=rev(colorRampPalette(brewer.pal(10, "RdBu"))(256)),
+          margins=c(9,2),
+          cexCol=1.3,
+          srtCol=45,
+          labRow="",
+          offsetCol=0,
+          key=TRUE,
+          keysize = 1.5,
+          density.info="density",
+          key.title="Color range",
+          key.xlab="Samples",
+          key.ylab="Incl.level",
+          key.par=list(mar=c(3,4,3,1)),
+          notecex=3, 
+          main="Inclusion-Level for signif. common spliced Exons\n(FDR<0.05, |dPSI| >0.1 in CT-vs-DM.NT")
+
+
+
+```
+
